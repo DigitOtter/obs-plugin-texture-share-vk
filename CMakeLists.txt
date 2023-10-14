@@ -1,5 +1,5 @@
-set(PROJECT_NAME "OBSPluginTextureShare")
-set(HEADER_DIRECTORY "obs_plugin_texture_share")
+set(PROJECT_NAME "OBSPluginTextureShareVk")
+set(HEADER_DIRECTORY "obs_plugin_texture_share_vk")
 
 set(NAMESPACE_NAME "${PROJECT_NAME}")
 
@@ -66,10 +66,10 @@ function(tsp_plugin_setup target)
 		PRIVATE)
 endfunction()
 
-add_library(TextureShareFilter SHARED "obs_plugin_texture_share/obs_plugin_texture_share_filter.cpp")
+add_library(TextureShareFilter SHARED "obs_plugin_texture_share_vk/tsv_send_filter.cpp")
 tsp_plugin_setup(TextureShareFilter)
 
-add_library(TextureShareSource SHARED "obs_plugin_texture_share/obs_plugin_texture_share_source.cpp")
+add_library(TextureShareSource SHARED "obs_plugin_texture_share_vk/tsv_receive_source.cpp")
 tsp_plugin_setup(TextureShareSource)
 
 

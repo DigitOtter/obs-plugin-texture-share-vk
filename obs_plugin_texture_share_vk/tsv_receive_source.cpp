@@ -1,8 +1,7 @@
-#include "obs_plugin_texture_share/obs_plugin_texture_share_source.hpp"
+#include "tsv_receive_source.hpp"
 
 #include <obs.h>
 #include <obs/graphics/graphics.h>
-#include <util/c99defs.h>
 
 
 extern "C"
@@ -21,7 +20,7 @@ extern "C"
 	void        obs_video_render(void *data, gs_effect_t *effect);
 
 	constexpr struct obs_source_info obs_plugin_texture_share_info = {
-		.id           = OBSPluginTextureShareSource::PLUGIN_NAME.data(),
+		.id           = TsvReceiveSource::PLUGIN_NAME.data(),
 		.type         = OBS_SOURCE_TYPE_INPUT,
 		.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW,
 		.get_name     = obs_get_name,
@@ -44,48 +43,48 @@ extern "C"
 	const char *obs_get_name(void *type_data)
 	{
 		UNUSED_PARAMETER(type_data);
-		return OBSPluginTextureShareSource::PLUGIN_NAME.data();
+		return TsvReceiveSource::PLUGIN_NAME.data();
 	}
 
 	void *obs_create(obs_data_t *settings, obs_source_t *source)
 	{
-		return new OBSPluginTextureShareSource(settings, source);
+		return new TsvReceiveSource(settings, source);
 	}
 
 	void obs_destroy(void *data)
 	{
 		if(data)
-			delete reinterpret_cast<OBSPluginTextureShareSource *>(data);
+			delete reinterpret_cast<TsvReceiveSource *>(data);
 	}
 
 	uint32_t obs_get_width(void *data)
 	{
-		return reinterpret_cast<OBSPluginTextureShareSource *>(data)->GetWidth();
+		return reinterpret_cast<TsvReceiveSource *>(data)->GetWidth();
 	}
 
 	uint32_t obs_get_height(void *data)
 	{
-		return reinterpret_cast<OBSPluginTextureShareSource *>(data)->GetHeight();
+		return reinterpret_cast<TsvReceiveSource *>(data)->GetHeight();
 	}
 
 	void obs_update(void *data, obs_data_t *settings)
 	{
-		return reinterpret_cast<OBSPluginTextureShareSource *>(data)->Update(settings);
+		return reinterpret_cast<TsvReceiveSource *>(data)->Update(settings);
 	}
 
 	void obs_video_render(void *data, gs_effect_t *effect)
 	{
-		return reinterpret_cast<OBSPluginTextureShareSource *>(data)->Render(effect);
+		return reinterpret_cast<TsvReceiveSource *>(data)->Render(effect);
 	}
 }
 
-OBSPluginTextureShareSource::OBSPluginTextureShareSource(obs_data_t *settings, obs_source_t *source)
+TsvReceiveSource::TsvReceiveSource(obs_data_t *settings, obs_source_t *source)
 	: _source(obs_source_get_ref(source))
 {
 	this->_tex_share_gl.init_with_server_launch();
 }
 
-OBSPluginTextureShareSource::~OBSPluginTextureShareSource()
+TsvReceiveSource::~TsvReceiveSource()
 {
 	const auto lock = std::lock_guard(this->_access);
 
@@ -104,17 +103,17 @@ OBSPluginTextureShareSource::~OBSPluginTextureShareSource()
 	}
 }
 
-uint32_t OBSPluginTextureShareSource::GetWidth()
+uint32_t TsvReceiveSource::GetWidth()
 {
 	return this->_tex_width;
 }
 
-uint32_t OBSPluginTextureShareSource::GetHeight()
+uint32_t TsvReceiveSource::GetHeight()
 {
 	return this->_tex_height;
 }
 
-void OBSPluginTextureShareSource::Render(gs_effect_t *effect)
+void TsvReceiveSource::Render(gs_effect_t *effect)
 {
 	const auto lock = std::lock_guard(this->_access);
 
@@ -196,7 +195,7 @@ void OBSPluginTextureShareSource::Render(gs_effect_t *effect)
 	}
 }
 
-bool OBSPluginTextureShareSource::UpdateTexture(uint32_t width, uint32_t height, gs_color_format format)
+bool TsvReceiveSource::UpdateTexture(uint32_t width, uint32_t height, gs_color_format format)
 {
 	if(this->_texture)
 		gs_texture_destroy(this->_texture);
@@ -211,7 +210,7 @@ bool OBSPluginTextureShareSource::UpdateTexture(uint32_t width, uint32_t height,
 	return true;
 }
 
-gs_color_format OBSPluginTextureShareSource::GetSharedTextureFormat(ImgFormat format)
+gs_color_format TsvReceiveSource::GetSharedTextureFormat(ImgFormat format)
 {
 	switch(format)
 	{

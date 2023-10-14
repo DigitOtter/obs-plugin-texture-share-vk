@@ -9,13 +9,13 @@
 
 /*! \brief Texture sharing filter. Uses offscreen rendering to send source texture to other programs.
  */
-class OBSPluginTextureShareSource
+class TsvReceiveSource
 {
 	public:
-	static constexpr std::string_view PLUGIN_NAME = "texture-share-source-plugin";
+	static constexpr std::string_view PLUGIN_NAME = "texture-share-vk-source-plugin";
 
-	OBSPluginTextureShareSource(obs_data_t *settings, obs_source_t *source);
-	~OBSPluginTextureShareSource();
+	TsvReceiveSource(obs_data_t *settings, obs_source_t *source);
+	~TsvReceiveSource();
 
 	/*! \brief Get source width
 	 */

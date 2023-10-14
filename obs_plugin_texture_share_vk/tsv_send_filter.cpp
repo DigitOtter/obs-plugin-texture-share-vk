@@ -1,8 +1,7 @@
-#include "obs_plugin_texture_share/obs_plugin_texture_share_filter.hpp"
+#include "tsv_send_filter.hpp"
 
 #include <obs.h>
 #include <obs/graphics/graphics.h>
-#include <util/c99defs.h>
 
 
 extern "C"
@@ -22,7 +21,7 @@ extern "C"
 	void obs_offscreen_render(void *param, uint32_t cx, uint32_t cy);
 
 	constexpr struct obs_source_info obs_plugin_shared_texture_filter_info = {
-		.id           = OBSPluginTextureShareFilter::PLUGIN_NAME.data(),
+		.id           = TsvSendFilter::PLUGIN_NAME.data(),
 		.type         = OBS_SOURCE_TYPE_FILTER,
 		.output_flags = OBS_SOURCE_VIDEO,
 		.get_name     = obs_get_name,
@@ -45,13 +44,13 @@ extern "C"
 	const char *obs_get_name(void *type_data)
 	{
 		UNUSED_PARAMETER(type_data);
-		return OBSPluginTextureShareFilter::PLUGIN_NAME.data();
+		return TsvSendFilter::PLUGIN_NAME.data();
 	}
 
 	void *obs_create(obs_data_t *settings, obs_source_t *source)
 	{
-		void *data = bmalloc(sizeof(OBSPluginTextureShareFilter));
-		new(data) OBSPluginTextureShareFilter(settings, source);
+		void *data = bmalloc(sizeof(TsvSendFilter));
+		new(data) TsvSendFilter(settings, source);
 		return data;
 	}
 
@@ -59,28 +58,28 @@ extern "C"
 	{
 		if(data)
 		{
-			reinterpret_cast<OBSPluginTextureShareFilter *>(data)->~OBSPluginTextureShareFilter();
+			reinterpret_cast<TsvSendFilter *>(data)->~TsvSendFilter();
 			bfree(data);
 		}
 	}
 
 	void obs_update(void *data, obs_data_t *settings)
 	{
-		return reinterpret_cast<OBSPluginTextureShareFilter *>(data)->Update(settings);
+		return reinterpret_cast<TsvSendFilter *>(data)->Update(settings);
 	}
 
 	void obs_video_render(void *data, gs_effect_t *effect)
 	{
-		return reinterpret_cast<OBSPluginTextureShareFilter *>(data)->Render(effect);
+		return reinterpret_cast<TsvSendFilter *>(data)->Render(effect);
 	}
 
 	void obs_offscreen_render(void *param, uint32_t cx, uint32_t cy)
 	{
-		return reinterpret_cast<OBSPluginTextureShareFilter *>(param)->OffscreenRender(cx, cy);
+		return reinterpret_cast<TsvSendFilter *>(param)->OffscreenRender(cx, cy);
 	}
 }
 
-OBSPluginTextureShareFilter::OBSPluginTextureShareFilter(obs_data_t * /*settings*/, obs_source_t *source)
+TsvSendFilter::TsvSendFilter(obs_data_t * /*settings*/, obs_source_t *source)
 	: _source(obs_source_get_ref(source))
 {
 	obs_add_main_render_callback(obs_offscreen_render, this);
@@ -88,7 +87,7 @@ OBSPluginTextureShareFilter::OBSPluginTextureShareFilter(obs_data_t * /*settings
 	this->_tex_share_gl.init_with_server_launch();
 }
 
-OBSPluginTextureShareFilter::~OBSPluginTextureShareFilter()
+TsvSendFilter::~TsvSendFilter()
 {
 	const auto lock         = std::lock_guard(this->_access);
 	this->_render_state     = WAITING;
@@ -110,7 +109,7 @@ OBSPluginTextureShareFilter::~OBSPluginTextureShareFilter()
 	}
 }
 
-void OBSPluginTextureShareFilter::Render(gs_effect_t *effect)
+void TsvSendFilter::Render(gs_effect_t *effect)
 {
 	UNUSED_PARAMETER(effect);
 
@@ -125,7 +124,7 @@ void OBSPluginTextureShareFilter::Render(gs_effect_t *effect)
 	obs_source_skip_video_filter(this->_source);
 }
 
-void OBSPluginTextureShareFilter::OffscreenRender(uint32_t /*cx*/, uint32_t /*cy*/)
+void TsvSendFilter::OffscreenRender(uint32_t /*cx*/, uint32_t /*cy*/)
 {
 	// Wait for update
 	if(this->_render_state != UPDATE_AVAILABLE)
@@ -189,7 +188,7 @@ void OBSPluginTextureShareFilter::OffscreenRender(uint32_t /*cx*/, uint32_t /*cy
 	}
 }
 
-bool OBSPluginTextureShareFilter::UpdateRenderTarget(uint32_t width, uint32_t height)
+bool TsvSendFilter::UpdateRenderTarget(uint32_t width, uint32_t height)
 {
 	if(width == 0 || height == 0)
 		return false;
