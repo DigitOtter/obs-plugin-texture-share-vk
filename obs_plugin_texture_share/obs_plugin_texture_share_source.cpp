@@ -2,7 +2,6 @@
 
 #include <obs.h>
 #include <obs/graphics/graphics.h>
-#include <texture_share_vk/opengl/texture_share_gl_client.h>
 #include <util/c99defs.h>
 
 
@@ -37,7 +36,7 @@ extern "C"
 	// Load module
 	bool obs_module_load(void)
 	{
-		ExternalHandleGl::LoadGlEXT();
+		TextureShareGlClient::initialize_gl_external();
 		obs_register_source(&obs_plugin_texture_share_info);
 		return true;
 	}
@@ -82,7 +81,9 @@ extern "C"
 
 OBSPluginTextureShareSource::OBSPluginTextureShareSource(obs_data_t *settings, obs_source_t *source)
 	: _source(obs_source_get_ref(source))
-{}
+{
+	this->_tex_share_gl.init_with_server_launch();
+}
 
 OBSPluginTextureShareSource::~OBSPluginTextureShareSource()
 {
@@ -124,53 +125,65 @@ void OBSPluginTextureShareSource::Render(gs_effect_t *effect)
 
 	if(!this->_texture)
 	{
-		if(this->_tex_share_gl.FindImage(this->_shared_texture_name))
+		bool force_update = false;
+
+		ImageLookupResult res = this->_tex_share_gl.find_image(this->_shared_texture_name.c_str(), false);
+		if(res == ImageLookupResult::RequiresUpdate)
+			force_update = true;
+
+		if(res != ImageLookupResult::Error && res != ImageLookupResult::NotFound)
 		{
-			const SharedImageHandleGl *shared_img_data =
-				this->_tex_share_gl.SharedImageHandle(this->_shared_texture_name, false);
+			const auto data_lock =
+				this->_tex_share_gl.find_image_data(this->_shared_texture_name.c_str(), force_update);
 
-			const uint32_t        tex_width  = shared_img_data->Width();
-			const uint32_t        tex_height = shared_img_data->Height();
-			const gs_color_format tex_format = GetSharedTextureFormat(shared_img_data->ImageFormat());
+			const auto *data = data_lock.read();
+			if(data != nullptr)
+			{
+				const uint32_t        tex_width  = data->width;
+				const uint32_t        tex_height = data->height;
+				const gs_color_format tex_format = GetSharedTextureFormat(data->format);
 
-			this->UpdateTexture(tex_width, tex_height, tex_format);
+				this->UpdateTexture(tex_width, tex_height, tex_format);
+			}
 		}
 	}
 	else
 	{
 		// Check whether the shared texture has changed
-		const bool requires_update = this->_tex_share_gl.HasImageMemoryChanged(this->_shared_texture_name);
-		if(requires_update && this->_tex_share_gl.FindImage(this->_shared_texture_name))
+		if(this->_tex_share_gl.find_image(this->_shared_texture_name.c_str(), false) ==
+		   ImageLookupResult::RequiresUpdate)
 		{
-			const SharedImageHandleGl *shared_img_data =
-				this->_tex_share_gl.SharedImageHandle(this->_shared_texture_name, false);
+			const auto data_lock = this->_tex_share_gl.find_image_data(this->_shared_texture_name.c_str(), true);
 
-			const uint32_t        tex_width  = shared_img_data->Width();
-			const uint32_t        tex_height = shared_img_data->Height();
-			const gs_color_format tex_format = GetSharedTextureFormat(shared_img_data->ImageFormat());
+			const auto *data = data_lock.read();
+			if(data != nullptr)
+			{
+				const uint32_t        tex_width  = data->width;
+				const uint32_t        tex_height = data->height;
+				const gs_color_format tex_format = GetSharedTextureFormat(data->format);
 
-			if(this->_tex_width != tex_width || this->_tex_height != tex_height || this->_tex_format != tex_format)
 				this->UpdateTexture(tex_width, tex_height, tex_format);
+			}
 		}
 	}
 
 	// Receive texture
 	if(this->_texture)
 	{
-		const TextureShareGlClient::ImageExtent image_size{
-			{0,						 0						 },
-			{(GLsizei)this->_tex_width, (GLsizei)this->_tex_height},
-		};
-
 		// Receive shared image
 		GLuint *const gl_texture = reinterpret_cast<GLuint *>(gs_texture_get_obj(this->_texture));
 		if(gl_texture)
 		{
+			const ImageExtent image_size{
+				{0,						 0						 },
+				{(GLsizei)this->_tex_width, (GLsizei)this->_tex_height},
+			};
+
 			GLint drawFboId = 0;
 			glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFboId);
 
-			this->_tex_share_gl.RecvImageBlit(this->_shared_texture_name, *gl_texture, GL_TEXTURE_2D, image_size, false,
-			                                  drawFboId);
+			this->_tex_share_gl.recv_image(this->_shared_texture_name.c_str(), *gl_texture, GL_TEXTURE_2D, false,
+			                               drawFboId, &image_size);
 		}
 	}
 
@@ -198,13 +211,13 @@ bool OBSPluginTextureShareSource::UpdateTexture(uint32_t width, uint32_t height,
 	return true;
 }
 
-gs_color_format OBSPluginTextureShareSource::GetSharedTextureFormat(GLuint format)
+gs_color_format OBSPluginTextureShareSource::GetSharedTextureFormat(ImgFormat format)
 {
 	switch(format)
 	{
-		case GL_RGBA:
+		case ImgFormat::R8G8B8A8:
 			return GS_RGBA;
-		case GL_BGRA:
+		case ImgFormat::B8G8R8A8:
 			return GS_BGRA;
 		default:
 			return GS_UNKNOWN;

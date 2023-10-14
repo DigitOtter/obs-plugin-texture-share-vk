@@ -2,7 +2,6 @@
 
 #include <obs.h>
 #include <obs/graphics/graphics.h>
-#include <texture_share_vk/opengl/texture_share_gl_client.h>
 #include <util/c99defs.h>
 
 
@@ -38,7 +37,7 @@ extern "C"
 	// Load module
 	bool obs_module_load(void)
 	{
-		ExternalHandleGl::LoadGlEXT();
+		TextureShareGlClient::initialize_gl_external();
 		obs_register_source(&obs_plugin_shared_texture_filter_info);
 		return true;
 	}
@@ -85,6 +84,8 @@ OBSPluginTextureShareFilter::OBSPluginTextureShareFilter(obs_data_t * /*settings
 	: _source(obs_source_get_ref(source))
 {
 	obs_add_main_render_callback(obs_offscreen_render, this);
+
+	this->_tex_share_gl.init_with_server_launch();
 }
 
 OBSPluginTextureShareFilter::~OBSPluginTextureShareFilter()
@@ -173,7 +174,7 @@ void OBSPluginTextureShareFilter::OffscreenRender(uint32_t /*cx*/, uint32_t /*cy
 		if(gl_texture)
 		{
 			// Texture size
-			const TextureShareGlClient::ImageExtent image_size{
+			const ImageExtent image_size{
 				{0,              0              },
 				{(GLsizei)width, (GLsizei)height},
 			};
@@ -182,8 +183,8 @@ void OBSPluginTextureShareFilter::OffscreenRender(uint32_t /*cx*/, uint32_t /*cy
 			GLint drawFboId = 0;
 			glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFboId);
 
-			this->_tex_share_gl.SendImageBlit(this->_shared_texture_name, *gl_texture, GL_TEXTURE_2D, image_size, false,
-			                                  drawFboId);
+			this->_tex_share_gl.send_image(this->_shared_texture_name.c_str(), *gl_texture, GL_TEXTURE_2D, false,
+			                               drawFboId, &image_size);
 		}
 	}
 }
@@ -199,7 +200,7 @@ bool OBSPluginTextureShareFilter::UpdateRenderTarget(uint32_t width, uint32_t he
 		this->_render_target = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 
 	// Initialize image. (OBS's GS_BGRA should translate to OpenGL's GL_BGRA)
-	this->_tex_share_gl.InitImage(this->_shared_texture_name, width, height, GL_RGBA, true);
+	this->_tex_share_gl.init_image(this->_shared_texture_name.c_str(), width, height, ImgFormat::R8G8B8A8, true);
 
 	this->_tex_width  = width;
 	this->_tex_height = height;

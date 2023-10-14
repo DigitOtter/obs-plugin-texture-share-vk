@@ -2,7 +2,7 @@
 
 #include <obs-module.h>
 #include <obs/graphics/graphics.h>
-#include <texture_share_vk/opengl/texture_share_gl_client.h>
+#include <texture_share_gl/texture_share_gl_client.hpp>
 
 #include <mutex>
 #include <string_view>
@@ -54,5 +54,5 @@ class OBSPluginTextureShareSource
 	 */
 	bool UpdateTexture(uint32_t cx, uint32_t cy, gs_color_format format);
 
-	static gs_color_format GetSharedTextureFormat(GLuint format);
+	static gs_color_format GetSharedTextureFormat(ImgFormat format);
 };

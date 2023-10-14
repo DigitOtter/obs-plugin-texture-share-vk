@@ -16,7 +16,7 @@ project("${PROJECT_NAME}" VERSION 1.0.0)
 
 include(GNUInstallDirs)
 
-find_package(TextureShareVulkan REQUIRED)
+find_package(TextureShareVk REQUIRED)
 find_package(GLUT REQUIRED)
 find_package(GLEW REQUIRED)
 
@@ -62,7 +62,7 @@ function(tsp_plugin_setup target)
 	target_link_libraries(${target}
 		PUBLIC
 		    OBS::libobs
-			TextureShareVulkan::TextureShareOpenGL
+			TextureShareVk::TextureShareGlClientCpp
 		PRIVATE)
 endfunction()
 

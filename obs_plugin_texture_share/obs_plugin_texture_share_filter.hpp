@@ -2,7 +2,7 @@
 
 #include <obs-module.h>
 #include <obs/graphics/graphics.h>
-#include <texture_share_vk/opengl/texture_share_gl_client.h>
+#include <texture_share_gl/texture_share_gl_client.hpp>
 
 #include <mutex>
 #include <string_view>
