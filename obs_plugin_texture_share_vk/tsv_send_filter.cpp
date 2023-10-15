@@ -16,21 +16,23 @@ extern "C"
 	void        obs_destroy(void *data);
 	// uint32_t    obs_get_width(void *data);
 	// uint32_t    obs_get_height(void *data);
-	void obs_update(void *data, obs_data_t *settings);
+	void              obs_get_defaults(void *data, obs_data_t *defaults);
+	obs_properties_t *obs_get_properties(void *data);
+	void              obs_update(void *data, obs_data_t *settings);
 	void obs_video_render(void *data, gs_effect_t *effect);
 	void obs_offscreen_render(void *param, uint32_t cx, uint32_t cy);
 
 	constexpr struct obs_source_info obs_plugin_shared_texture_filter_info = {
-		.id           = TsvSendFilter::PLUGIN_NAME.data(),
-		.type         = OBS_SOURCE_TYPE_FILTER,
-		.output_flags = OBS_SOURCE_VIDEO,
-		.get_name     = obs_get_name,
-		.create       = obs_create,
-		.destroy      = obs_destroy,
-		// .get_width    = obs_get_width,
-	    // .get_height   = obs_get_height,
-		.update       = obs_update,
-		.video_render = obs_video_render,
+		.id             = TsvSendFilter::PLUGIN_NAME.data(),
+		.type           = OBS_SOURCE_TYPE_FILTER,
+		.output_flags   = OBS_SOURCE_VIDEO,
+		.get_name       = obs_get_name,
+		.create         = obs_create,
+		.destroy        = obs_destroy,
+		.get_properties = obs_get_properties,
+		.update         = obs_update,
+		.video_render   = obs_video_render,
+		.get_defaults2  = obs_get_defaults,
 	};
 
 	// Load module
@@ -63,9 +65,19 @@ extern "C"
 		}
 	}
 
+	void obs_get_defaults(void *data, obs_data_t *defaults)
+	{
+		return reinterpret_cast<TsvSendFilter *>(data)->GetDefaults(defaults);
+	}
+
+	obs_properties_t *obs_get_properties(void *data)
+	{
+		return reinterpret_cast<TsvSendFilter *>(data)->GetProperties();
+	}
+
 	void obs_update(void *data, obs_data_t *settings)
 	{
-		return reinterpret_cast<TsvSendFilter *>(data)->Update(settings);
+		return reinterpret_cast<TsvSendFilter *>(data)->UpdateProperties(settings);
 	}
 
 	void obs_video_render(void *data, gs_effect_t *effect)
@@ -79,9 +91,11 @@ extern "C"
 	}
 }
 
-TsvSendFilter::TsvSendFilter(obs_data_t * /*settings*/, obs_source_t *source)
+TsvSendFilter::TsvSendFilter(obs_data_t *settings, obs_source_t *source)
 	: _source(obs_source_get_ref(source))
 {
+	this->UpdateSharedTextureName(settings);
+
 	obs_add_main_render_callback(obs_offscreen_render, this);
 
 	this->_tex_share_gl.init_with_server_launch();
@@ -89,6 +103,8 @@ TsvSendFilter::TsvSendFilter(obs_data_t * /*settings*/, obs_source_t *source)
 
 TsvSendFilter::~TsvSendFilter()
 {
+	// Note: Enter graphics first to prevent race condition
+	obs_enter_graphics();
 	const auto lock         = std::lock_guard(this->_access);
 	this->_render_state     = WAITING;
 
@@ -98,8 +114,8 @@ TsvSendFilter::~TsvSendFilter()
 	{
 		obs_enter_graphics();
 		gs_texrender_destroy(this->_render_target);
-		obs_leave_graphics();
 		this->_render_target = nullptr;
+		obs_leave_graphics();
 	}
 
 	if(this->_source)
@@ -107,6 +123,33 @@ TsvSendFilter::~TsvSendFilter()
 		obs_source_release(this->_source);
 		this->_source = nullptr;
 	}
+
+	obs_leave_graphics();
+}
+
+obs_properties_t *TsvSendFilter::GetProperties()
+{
+	obs_properties_t *properties = obs_properties_create();
+
+	obs_properties_add_text(properties, PROPERTY_SHARED_TEXTURE_NAME.data(),
+	                        obs_module_text(PROPERTY_SHARED_TEXTURE_NAME.data()), OBS_TEXT_DEFAULT);
+
+	obs_properties_add_button(properties, PROPERTY_APPLY_BUTTON.data(), obs_module_text(PROPERTY_APPLY_BUTTON.data()),
+	                          &TsvSendFilter::PropertyClickedCb);
+
+	return properties;
+}
+
+void TsvSendFilter::GetDefaults(obs_data_t *defaults)
+{
+	obs_data_set_default_string(defaults, PROPERTY_SHARED_TEXTURE_NAME.data(),
+	                            obs_module_text(PROPERTY_SHARED_TEXTURE_NAME_DEFAULT.data()));
+}
+
+void TsvSendFilter::UpdateProperties(obs_data_t * /*settings*/)
+{
+	// Do nothing. Only update settings when apply button is pressed.
+	// This prevents creating multiple shared textures when typing in the name text field
 }
 
 void TsvSendFilter::Render(gs_effect_t *effect)
@@ -206,5 +249,43 @@ bool TsvSendFilter::UpdateRenderTarget(uint32_t width, uint32_t height)
 
 	obs_leave_graphics();
 
+	return true;
+}
+
+void TsvSendFilter::UpdateSharedTextureName(obs_data_t *settings)
+{
+	// Check if sender name was updated
+	const char *new_sender_name = obs_data_get_string(settings, PROPERTY_SHARED_TEXTURE_NAME.data());
+	if(this->_shared_texture_name != new_sender_name)
+	{
+		// If name was updated, reinitialize render target
+		// Note: Enter graphics first to prevent race condition
+		obs_enter_graphics();
+		const auto lock = std::lock_guard(this->_access);
+		if(this->_render_target)
+		{
+			gs_texrender_destroy(this->_render_target);
+			this->_render_target = nullptr;
+		}
+
+		obs_leave_graphics();
+
+		this->_shared_texture_name = obs_data_get_string(settings, PROPERTY_SHARED_TEXTURE_NAME.data());
+	}
+}
+
+bool TsvSendFilter::PropertyClickedCb(obs_properties_t *props, obs_property_t *property, void *data)
+{
+	return reinterpret_cast<TsvSendFilter *>(data)->PropertyClicked(props, property);
+}
+
+bool TsvSendFilter::PropertyClicked(obs_properties_t * /*props*/, obs_property_t * /*property*/)
+{
+	obs_data_t *settings = obs_source_get_settings(this->_source);
+
+	// Update shared texture name
+	this->UpdateSharedTextureName(settings);
+
+	obs_data_release(settings);
 	return true;
 }

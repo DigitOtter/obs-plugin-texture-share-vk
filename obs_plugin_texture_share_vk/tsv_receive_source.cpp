@@ -11,25 +11,31 @@ extern "C"
 	OBS_MODULE_USE_DEFAULT_LOCALE(OBSPluginTextureShareSource::PLUGIN_NAME.data(), "en-US");
 
 	// Define plugin info
-	const char *obs_get_name(void *type_data);
-	void       *obs_create(obs_data_t *settings, obs_source_t *source);
-	void        obs_destroy(void *data);
-	uint32_t    obs_get_width(void *data);
-	uint32_t    obs_get_height(void *data);
-	void        obs_update(void *data, obs_data_t *settings);
-	void        obs_video_render(void *data, gs_effect_t *effect);
+	const char       *obs_get_name(void *type_data);
+	void             *obs_create(obs_data_t *settings, obs_source_t *source);
+	void              obs_destroy(void *data);
+	uint32_t          obs_get_width(void *data);
+	uint32_t          obs_get_height(void *data);
+	void              obs_get_defaults(void *data, obs_data_t *defaults);
+	obs_properties_t *obs_get_properties(void *data);
+	void              obs_update(void *data, obs_data_t *settings);
+	void              obs_video_tick(void *data, float seconds);
+	void              obs_video_render(void *data, gs_effect_t *effect);
 
 	constexpr struct obs_source_info obs_plugin_texture_share_info = {
-		.id           = TsvReceiveSource::PLUGIN_NAME.data(),
-		.type         = OBS_SOURCE_TYPE_INPUT,
-		.output_flags = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW,
-		.get_name     = obs_get_name,
-		.create       = obs_create,
-		.destroy      = obs_destroy,
-		.get_width    = obs_get_width,
-		.get_height   = obs_get_height,
-		.update       = obs_update,
-		.video_render = obs_video_render,
+		.id             = TsvReceiveSource::PLUGIN_NAME.data(),
+		.type           = OBS_SOURCE_TYPE_INPUT,
+		.output_flags   = OBS_SOURCE_VIDEO | OBS_SOURCE_CUSTOM_DRAW,
+		.get_name       = obs_get_name,
+		.create         = obs_create,
+		.destroy        = obs_destroy,
+		.get_width      = obs_get_width,
+		.get_height     = obs_get_height,
+		.get_properties = obs_get_properties,
+		.update         = obs_update,
+		.video_tick     = obs_video_tick,
+		.video_render   = obs_video_render,
+		.get_defaults2  = obs_get_defaults,
 	};
 
 	// Load module
@@ -67,9 +73,24 @@ extern "C"
 		return reinterpret_cast<TsvReceiveSource *>(data)->GetHeight();
 	}
 
+	void obs_get_defaults(void *data, obs_data_t *defaults)
+	{
+		return reinterpret_cast<TsvReceiveSource *>(data)->GetDefaults(defaults);
+	}
+
+	obs_properties_t *obs_get_properties(void *data)
+	{
+		return reinterpret_cast<TsvReceiveSource *>(data)->GetProperties();
+	}
+
 	void obs_update(void *data, obs_data_t *settings)
 	{
-		return reinterpret_cast<TsvReceiveSource *>(data)->Update(settings);
+		return reinterpret_cast<TsvReceiveSource *>(data)->UpdateProperties(settings);
+	}
+
+	void obs_video_tick(void *data, float seconds)
+	{
+		return reinterpret_cast<TsvReceiveSource *>(data)->OnTick(seconds);
 	}
 
 	void obs_video_render(void *data, gs_effect_t *effect)
@@ -81,18 +102,20 @@ extern "C"
 TsvReceiveSource::TsvReceiveSource(obs_data_t *settings, obs_source_t *source)
 	: _source(obs_source_get_ref(source))
 {
+	this->UpdateProperties(settings);
+
 	this->_tex_share_gl.init_with_server_launch();
 }
 
 TsvReceiveSource::~TsvReceiveSource()
 {
+	// Note: Enter graphics first to prevent race condition
+	obs_enter_graphics();
 	const auto lock = std::lock_guard(this->_access);
 
 	if(this->_texture)
 	{
-		obs_enter_graphics();
 		gs_texture_destroy(this->_texture);
-		obs_leave_graphics();
 		this->_texture = nullptr;
 	}
 
@@ -101,6 +124,8 @@ TsvReceiveSource::~TsvReceiveSource()
 		obs_source_release(this->_source);
 		this->_source = nullptr;
 	}
+
+	obs_leave_graphics();
 }
 
 uint32_t TsvReceiveSource::GetWidth()
@@ -113,28 +138,78 @@ uint32_t TsvReceiveSource::GetHeight()
 	return this->_tex_height;
 }
 
+obs_properties_t *TsvReceiveSource::GetProperties()
+{
+	obs_properties_t *properties = obs_properties_create();
+
+	obs_properties_add_text(properties, PROPERTY_SHARED_TEXTURE_NAME.data(),
+	                        obs_module_text(PROPERTY_SHARED_TEXTURE_NAME.data()), OBS_TEXT_DEFAULT);
+
+	return properties;
+}
+
+void TsvReceiveSource::GetDefaults(obs_data_t *defaults)
+{
+	obs_data_set_default_string(defaults, PROPERTY_SHARED_TEXTURE_NAME.data(),
+	                            obs_module_text(PROPERTY_SHARED_TEXTURE_NAME_DEFAULT.data()));
+}
+
+void TsvReceiveSource::UpdateProperties(obs_data_t *settings)
+{
+	// Check if sender name was updated
+	const char *new_sender_name = obs_data_get_string(settings, PROPERTY_SHARED_TEXTURE_NAME.data());
+	if(this->_shared_texture_name == new_sender_name)
+		return;
+
+	// If name was updated, reinitialize texture
+	// Note: Enter graphics first to prevent race condition
+	obs_enter_graphics();
+	const auto lock = std::lock_guard(this->_access);
+
+	if(this->_texture)
+	{
+		gs_texture_destroy(this->_texture);
+		this->_texture = nullptr;
+	}
+
+	obs_leave_graphics();
+
+	this->_image_found         = false;
+	this->_shared_texture_name = obs_data_get_string(settings, PROPERTY_SHARED_TEXTURE_NAME.data());
+}
+
+void TsvReceiveSource::OnTick(float seconds)
+{
+	this->_elapsed_seconds += seconds;
+	if(this->_elapsed_seconds >= SEARCH_INTERVAL)
+	{
+		this->_elapsed_seconds = 0;
+
+		if(!this->_texture && !this->_shared_texture_name.empty() &&
+		   this->_image_search_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+		{
+			this->_image_search_thread = std::async(std::launch::async, &TsvReceiveSource::ImageSearchFunction, this);
+		}
+	}
+}
+
 void TsvReceiveSource::Render(gs_effect_t *effect)
 {
-	const auto lock = std::lock_guard(this->_access);
+	// Note: Enter graphics before acuiring _lock to prevent race condition
+	obs_enter_graphics();
 
 	// Get default obs effect for drawing
 	effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
 
-	obs_enter_graphics();
-
-	if(!this->_texture)
+	if(!this->_texture && this->_image_found)
 	{
-		bool force_update = false;
+		this->_image_found = false;
 
-		ImageLookupResult res = this->_tex_share_gl.find_image(this->_shared_texture_name.c_str(), false);
-		if(res == ImageLookupResult::RequiresUpdate)
-			force_update = true;
+		const auto lock = std::lock_guard(this->_access);
 
-		if(res != ImageLookupResult::Error && res != ImageLookupResult::NotFound)
+		const auto data_lock = this->_tex_share_gl.find_image_data(this->_shared_texture_name.c_str(), true);
+		if(data_lock.is_valid())
 		{
-			const auto data_lock =
-				this->_tex_share_gl.find_image_data(this->_shared_texture_name.c_str(), force_update);
-
 			const auto *data = data_lock.read();
 			if(data != nullptr)
 			{
@@ -146,8 +221,11 @@ void TsvReceiveSource::Render(gs_effect_t *effect)
 			}
 		}
 	}
-	else
+
+	if(this->_texture)
 	{
+		const auto lock = std::lock_guard(this->_access);
+
 		// Check whether the shared texture has changed
 		if(this->_tex_share_gl.find_image(this->_shared_texture_name.c_str(), false) ==
 		   ImageLookupResult::RequiresUpdate)
@@ -164,11 +242,7 @@ void TsvReceiveSource::Render(gs_effect_t *effect)
 				this->UpdateTexture(tex_width, tex_height, tex_format);
 			}
 		}
-	}
 
-	// Receive texture
-	if(this->_texture)
-	{
 		// Receive shared image
 		GLuint *const gl_texture = reinterpret_cast<GLuint *>(gs_texture_get_obj(this->_texture));
 		if(gl_texture)
@@ -184,15 +258,24 @@ void TsvReceiveSource::Render(gs_effect_t *effect)
 			this->_tex_share_gl.recv_image(this->_shared_texture_name.c_str(), *gl_texture, GL_TEXTURE_2D, false,
 			                               drawFboId, &image_size);
 		}
+
+		// Draw texture
+		while(gs_effect_loop(effect, "Draw"))
+		{
+			obs_source_draw(this->_texture, 0, 0, 0, 0, false);
+		}
 	}
 
 	obs_leave_graphics();
+}
 
-	// Draw texture
-	while(gs_effect_loop(effect, "Draw"))
-	{
-		obs_source_draw(this->_texture, 0, 0, 0, 0, false);
-	}
+void TsvReceiveSource::ImageSearchFunction()
+{
+	const auto lock = std::lock_guard(this->_access);
+
+	ImageLookupResult res = this->_tex_share_gl.find_image(this->_shared_texture_name.c_str(), false);
+	if(res == ImageLookupResult::Found || res == ImageLookupResult::RequiresUpdate)
+		this->_image_found = true;
 }
 
 bool TsvReceiveSource::UpdateTexture(uint32_t width, uint32_t height, gs_color_format format)

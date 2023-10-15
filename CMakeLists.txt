@@ -66,20 +66,20 @@ function(tsp_plugin_setup target)
 		PRIVATE)
 endfunction()
 
-add_library(TextureShareFilter SHARED "obs_plugin_texture_share_vk/tsv_send_filter.cpp")
-tsp_plugin_setup(TextureShareFilter)
+add_library(TsvSendFilter SHARED "obs_plugin_texture_share_vk/tsv_send_filter.cpp")
+tsp_plugin_setup(TsvSendFilter)
 
-add_library(TextureShareSource SHARED "obs_plugin_texture_share_vk/tsv_receive_source.cpp")
-tsp_plugin_setup(TextureShareSource)
+add_library(TsvReceiveSource SHARED "obs_plugin_texture_share_vk/tsv_receive_source.cpp")
+tsp_plugin_setup(TsvReceiveSource)
 
 
 ##########################################
 ## Install files
 if(${BUILD_IN_OBS})
-	    install_obs_plugin_with_data(TextureShareFilter data)
-		install_obs_plugin_with_data(TextureShareSource data)
+	    install_obs_plugin_with_data(TsvSendFilter data)
+		install_obs_plugin_with_data(TsvReceiveSource data)
 else()
-	    install(TARGETS TextureShareFilter TextureShareSource
+	    install(TARGETS TsvSendFilter TsvReceiveSource
 			    EXPORT ${LIB_EXPORT_NAME}
 				LIBRARY DESTINATION "${OBS_PLUGIN_LIB_DIR}"
 				ARCHIVE DESTINATION "${OBS_PLUGIN_LIB_DIR}")
