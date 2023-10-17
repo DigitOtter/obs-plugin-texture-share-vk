@@ -100,7 +100,7 @@ extern "C"
 }
 
 TsvReceiveSource::TsvReceiveSource(obs_data_t *settings, obs_source_t *source)
-	: _source(obs_source_get_ref(source))
+	: _source(source)
 {
 	this->UpdateProperties(settings);
 
@@ -119,11 +119,7 @@ TsvReceiveSource::~TsvReceiveSource()
 		this->_texture = nullptr;
 	}
 
-	if(this->_source)
-	{
-		obs_source_release(this->_source);
-		this->_source = nullptr;
-	}
+	this->_source = nullptr;
 
 	obs_leave_graphics();
 }

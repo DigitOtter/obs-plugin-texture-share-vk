@@ -92,7 +92,7 @@ extern "C"
 }
 
 TsvSendFilter::TsvSendFilter(obs_data_t *settings, obs_source_t *source)
-	: _source(obs_source_get_ref(source))
+	: _source(source)
 {
 	this->UpdateSharedTextureName(settings);
 
@@ -118,11 +118,7 @@ TsvSendFilter::~TsvSendFilter()
 		obs_leave_graphics();
 	}
 
-	if(this->_source)
-	{
-		obs_source_release(this->_source);
-		this->_source = nullptr;
-	}
+	this->_source = nullptr;
 
 	obs_leave_graphics();
 }
@@ -175,6 +171,9 @@ void TsvSendFilter::OffscreenRender(uint32_t /*cx*/, uint32_t /*cy*/)
 
 	const auto lock         = std::lock_guard(this->_access);
 	this->_render_state     = WAITING;
+
+	//	if(!this->_source)
+	//		return;
 
 	const uint32_t width  = obs_source_get_base_width(this->_source);
 	const uint32_t height = obs_source_get_base_height(this->_source);
