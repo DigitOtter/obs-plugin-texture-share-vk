@@ -61,9 +61,6 @@ class TsvReceiveSource
 	std::string          _shared_texture_name;
 	float                _elapsed_seconds = 0;
 
-	std::future<void> _image_search_thread = std::async(std::launch::async, []() {});
-	bool              _image_found         = false;
-
 	obs_source_t *_source  = nullptr;
 	gs_texture_t *_texture = nullptr;
 

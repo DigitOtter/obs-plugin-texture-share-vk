@@ -174,7 +174,6 @@ void TsvReceiveSource::UpdateProperties(obs_data_t *settings)
 
 	obs_leave_graphics();
 
-	this->_image_found         = false;
 	this->_shared_texture_name = obs_data_get_string(settings, PROPERTY_SHARED_TEXTURE_NAME.data());
 }
 
@@ -185,11 +184,8 @@ void TsvReceiveSource::OnTick(float seconds)
 	{
 		this->_elapsed_seconds = 0;
 
-		if(!this->_texture && !this->_shared_texture_name.empty() &&
-		   this->_image_search_thread.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
-		{
-			this->_image_search_thread = std::async(std::launch::async, &TsvReceiveSource::ImageSearchFunction, this);
-		}
+		if(!this->_texture && !this->_shared_texture_name.empty())
+			this->ImageSearchFunction();
 	}
 }
 
@@ -200,27 +196,6 @@ void TsvReceiveSource::Render(gs_effect_t *effect)
 
 	// Get default obs effect for drawing
 	effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
-
-	if(!this->_texture && this->_image_found)
-	{
-		this->_image_found = false;
-
-		const auto lock = std::lock_guard(this->_access);
-
-		const auto data_lock = this->_tex_share_gl.find_image_data(this->_shared_texture_name.c_str(), true);
-		if(data_lock.is_valid())
-		{
-			const auto *data = data_lock.read();
-			if(data != nullptr)
-			{
-				const uint32_t        tex_width  = data->width;
-				const uint32_t        tex_height = data->height;
-				const gs_color_format tex_format = GetSharedTextureFormat(data->format);
-
-				this->UpdateTexture(tex_width, tex_height, tex_format);
-			}
-		}
-	}
 
 	if(this->_texture)
 	{
@@ -271,11 +246,21 @@ void TsvReceiveSource::Render(gs_effect_t *effect)
 
 void TsvReceiveSource::ImageSearchFunction()
 {
+	obs_enter_graphics();
 	const auto lock = std::lock_guard(this->_access);
 
-	ImageLookupResult res = this->_tex_share_gl.find_image(this->_shared_texture_name.c_str(), false);
-	if(res == ImageLookupResult::Found || res == ImageLookupResult::RequiresUpdate)
-		this->_image_found = true;
+	const auto  data_lock = this->_tex_share_gl.find_image_data(this->_shared_texture_name.c_str(), true);
+	const auto *data      = data_lock.read();
+	if(data != nullptr)
+	{
+		const uint32_t        tex_width  = data->width;
+		const uint32_t        tex_height = data->height;
+		const gs_color_format tex_format = GetSharedTextureFormat(data->format);
+
+		this->UpdateTexture(tex_width, tex_height, tex_format);
+	}
+
+	obs_leave_graphics();
 }
 
 bool TsvReceiveSource::UpdateTexture(uint32_t width, uint32_t height, gs_color_format format)
