@@ -1,7 +1,7 @@
 #pragma once
 
 #include <obs-module.h>
-#include <obs/graphics/graphics.h>
+// #include <obs/graphics/graphics.h>
 #include <texture_share_gl/texture_share_gl_client.hpp>
 
 #include <future>
@@ -58,14 +58,14 @@ class TsvReceiveSource
 	std::mutex _access;
 
 	TextureShareGlClient _tex_share_gl;
-	std::string          _shared_texture_name;
-	float                _elapsed_seconds = 0;
+	std::string _shared_texture_name;
+	float _elapsed_seconds = 0;
 
 	obs_source_t *_source  = nullptr;
 	gs_texture_t *_texture = nullptr;
 
-	uint32_t        _tex_width  = 0;
-	uint32_t        _tex_height = 0;
+	uint32_t _tex_width         = 0;
+	uint32_t _tex_height        = 0;
 	gs_color_format _tex_format = GS_UNKNOWN;
 
 	void ImageSearchFunction();

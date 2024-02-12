@@ -1,26 +1,28 @@
 #include "tsv_receive_source.hpp"
 
 #include <obs.h>
-#include <obs/graphics/graphics.h>
+#include <texture_share_gl/texture_share_gl_client.h>
+#include <util/bmem.h>
+// #include <obs/graphics/graphics.h>
 
 
 extern "C"
 {
-    /* Required OBS module commands (required) */
-    OBS_DECLARE_MODULE();
+	/* Required OBS module commands (required) */
+	OBS_DECLARE_MODULE();
 	OBS_MODULE_USE_DEFAULT_LOCALE(OBSPluginTextureShareSource::PLUGIN_NAME.data(), "en-US");
 
 	// Define plugin info
-	const char       *obs_get_name(void *type_data);
-	void             *obs_create(obs_data_t *settings, obs_source_t *source);
-	void              obs_destroy(void *data);
-	uint32_t          obs_get_width(void *data);
-	uint32_t          obs_get_height(void *data);
-	void              obs_get_defaults(void *data, obs_data_t *defaults);
+	const char *obs_get_name(void *type_data);
+	void *obs_create(obs_data_t *settings, obs_source_t *source);
+	void obs_destroy(void *data);
+	uint32_t obs_get_width(void *data);
+	uint32_t obs_get_height(void *data);
+	void obs_get_defaults(void *data, obs_data_t *defaults);
 	obs_properties_t *obs_get_properties(void *data);
-	void              obs_update(void *data, obs_data_t *settings);
-	void              obs_video_tick(void *data, float seconds);
-	void              obs_video_render(void *data, gs_effect_t *effect);
+	void obs_update(void *data, obs_data_t *settings);
+	void obs_video_tick(void *data, float seconds);
+	void obs_video_render(void *data, gs_effect_t *effect);
 
 	constexpr struct obs_source_info obs_plugin_texture_share_info = {
 		.id             = TsvReceiveSource::PLUGIN_NAME.data(),
@@ -41,7 +43,6 @@ extern "C"
 	// Load module
 	bool obs_module_load(void)
 	{
-		TextureShareGlClient::initialize_gl_external();
 		obs_register_source(&obs_plugin_texture_share_info);
 		return true;
 	}
@@ -54,13 +55,24 @@ extern "C"
 
 	void *obs_create(obs_data_t *settings, obs_source_t *source)
 	{
-		return new TsvReceiveSource(settings, source);
+		// Enter graphics to load OpenGL functions
+		obs_enter_graphics();
+
+		TextureShareGlClient::initialize_gl_external();
+		void *data = bmalloc(sizeof(TsvReceiveSource));
+		new(data) TsvReceiveSource(settings, source);
+
+		obs_leave_graphics();
+		return data;
 	}
 
 	void obs_destroy(void *data)
 	{
 		if(data)
-			delete reinterpret_cast<TsvReceiveSource *>(data);
+		{
+			reinterpret_cast<TsvReceiveSource *>(data)->~TsvReceiveSource();
+			bfree(data);
+		}
 	}
 
 	uint32_t obs_get_width(void *data)
@@ -206,8 +218,8 @@ void TsvReceiveSource::Render(gs_effect_t *effect)
 			const auto *data = data_lock.read();
 			if(data != nullptr)
 			{
-				const uint32_t        tex_width  = data->width;
-				const uint32_t        tex_height = data->height;
+				const uint32_t tex_width         = data->width;
+				const uint32_t tex_height        = data->height;
 				const gs_color_format tex_format = GetSharedTextureFormat(data->format);
 
 				this->UpdateTexture(tex_width, tex_height, tex_format);
@@ -218,7 +230,7 @@ void TsvReceiveSource::Render(gs_effect_t *effect)
 		GLuint *const gl_texture = reinterpret_cast<GLuint *>(gs_texture_get_obj(this->_texture));
 		if(gl_texture)
 		{
-			const ImageExtent image_size{
+			const GlImageExtent image_size{
 				{0,						 0						 },
 				{(GLsizei)this->_tex_width, (GLsizei)this->_tex_height},
 			};
@@ -245,12 +257,12 @@ void TsvReceiveSource::ImageSearchFunction()
 	obs_enter_graphics();
 	const auto lock = std::lock_guard(this->_access);
 
-	const auto  data_lock = this->_tex_share_gl.find_image_data(this->_shared_texture_name.c_str(), true);
-	const auto *data      = data_lock.read();
+	const auto data_lock = this->_tex_share_gl.find_image_data(this->_shared_texture_name.c_str(), true);
+	const auto *data     = data_lock.read();
 	if(data != nullptr)
 	{
-		const uint32_t        tex_width  = data->width;
-		const uint32_t        tex_height = data->height;
+		const uint32_t tex_width         = data->width;
+		const uint32_t tex_height        = data->height;
 		const gs_color_format tex_format = GetSharedTextureFormat(data->format);
 
 		this->UpdateTexture(tex_width, tex_height, tex_format);

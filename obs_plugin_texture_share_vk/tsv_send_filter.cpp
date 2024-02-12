@@ -1,24 +1,24 @@
 #include "tsv_send_filter.hpp"
 
 #include <obs.h>
-#include <obs/graphics/graphics.h>
+// #include <obs/graphics/graphics.h>
 
 
 extern "C"
 {
-    /* Required OBS module commands (required) */
-    OBS_DECLARE_MODULE();
+	/* Required OBS module commands (required) */
+	OBS_DECLARE_MODULE();
 	OBS_MODULE_USE_DEFAULT_LOCALE(OBSPluginTextureShareFilter::PLUGIN_NAME.data(), "en-US");
 
 	// Define plugin info
 	const char *obs_get_name(void *type_data);
-	void       *obs_create(obs_data_t *settings, obs_source_t *source);
-	void        obs_destroy(void *data);
+	void *obs_create(obs_data_t *settings, obs_source_t *source);
+	void obs_destroy(void *data);
 	// uint32_t    obs_get_width(void *data);
 	// uint32_t    obs_get_height(void *data);
-	void              obs_get_defaults(void *data, obs_data_t *defaults);
+	void obs_get_defaults(void *data, obs_data_t *defaults);
 	obs_properties_t *obs_get_properties(void *data);
-	void              obs_update(void *data, obs_data_t *settings);
+	void obs_update(void *data, obs_data_t *settings);
 	void obs_video_render(void *data, gs_effect_t *effect);
 	void obs_offscreen_render(void *param, uint32_t cx, uint32_t cy);
 
@@ -38,8 +38,8 @@ extern "C"
 	// Load module
 	bool obs_module_load(void)
 	{
-		TextureShareGlClient::initialize_gl_external();
 		obs_register_source(&obs_plugin_shared_texture_filter_info);
+
 		return true;
 	}
 
@@ -51,8 +51,15 @@ extern "C"
 
 	void *obs_create(obs_data_t *settings, obs_source_t *source)
 	{
+		// Enter graphics to load OpenGL functions
+		obs_enter_graphics();
+
+		TextureShareGlClient::initialize_gl_external();
+
 		void *data = bmalloc(sizeof(TsvSendFilter));
 		new(data) TsvSendFilter(settings, source);
+
+		obs_leave_graphics();
 		return data;
 	}
 
@@ -105,8 +112,8 @@ TsvSendFilter::~TsvSendFilter()
 {
 	// Note: Enter graphics first to prevent race condition
 	obs_enter_graphics();
-	const auto lock         = std::lock_guard(this->_access);
-	this->_render_state     = WAITING;
+	const auto lock     = std::lock_guard(this->_access);
+	this->_render_state = WAITING;
 
 	obs_remove_main_render_callback(obs_offscreen_render, this);
 
@@ -169,8 +176,8 @@ void TsvSendFilter::OffscreenRender(uint32_t /*cx*/, uint32_t /*cy*/)
 	if(this->_render_state != UPDATE_AVAILABLE)
 		return;
 
-	const auto lock         = std::lock_guard(this->_access);
-	this->_render_state     = WAITING;
+	const auto lock     = std::lock_guard(this->_access);
+	this->_render_state = WAITING;
 
 	//	if(!this->_source)
 	//		return;
@@ -210,12 +217,12 @@ void TsvSendFilter::OffscreenRender(uint32_t /*cx*/, uint32_t /*cy*/)
 		this->_render_state = WAITING;
 
 		// Send to shared texture
-		gs_texture_t *const ptex       = gs_texrender_get_texture(this->_render_target);
-		GLuint *const       gl_texture = reinterpret_cast<GLuint *>(gs_texture_get_obj(ptex));
+		gs_texture_t *const ptex = gs_texrender_get_texture(this->_render_target);
+		GLuint *const gl_texture = reinterpret_cast<GLuint *>(gs_texture_get_obj(ptex));
 		if(gl_texture)
 		{
 			// Texture size
-			const ImageExtent image_size{
+			const GlImageExtent image_size{
 				{0,              0              },
 				{(GLsizei)width, (GLsizei)height},
 			};

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <obs-module.h>
-#include <obs/graphics/graphics.h>
+// #include <obs/graphics/graphics.h>
 #include <texture_share_gl/texture_share_gl_client.hpp>
 
 #include <mutex>
@@ -45,14 +45,15 @@ class TsvSendFilter
 		UPDATE_AVAILABLE,
 		OFFSCREEN_RENDERING
 	};
+
 	RENDER_STATE _render_state = WAITING;
-	bool       _update_available = false;
+	bool _update_available     = false;
 	std::mutex _access;
 
 	TextureShareGlClient _tex_share_gl;
-	std::string          _shared_texture_name = "gd_img";
+	std::string _shared_texture_name = "gd_img";
 
-	obs_source_t   *_source        = nullptr;
+	obs_source_t *_source          = nullptr;
 	gs_texrender_t *_render_target = nullptr;
 
 	uint32_t _tex_width  = 0;
